@@ -10,12 +10,15 @@
     </parent>
 
     <artifactId>spring-cloud-framework</artifactId>
-    <description>公共服务、框架配置</description>
-
     <packaging>pom</packaging>
-
     <modules>
         <module>spring-cloud-common</module>
     </modules>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
 
 </project>
