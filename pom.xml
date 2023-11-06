@@ -110,6 +110,7 @@
                 <version>${spring.cloud.oauth2.version}</version>
             </dependency>
 
+            <!-- spring-boot-admin -->
             <dependency>
                 <groupId>de.codecentric</groupId>
                 <artifactId>spring-boot-admin-starter-server</artifactId>
@@ -322,5 +323,6 @@
             </snapshots>
         </pluginRepository>
     </pluginRepositories>
+
 
 </project>
