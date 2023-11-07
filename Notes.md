@@ -6,6 +6,16 @@
 
 官网：[nacos](https://nacos.io/zh-cn/index.html)
 
+- 引入依赖
+
+```xml
+<!-- 服务注册与发现 -->
+<dependency>
+    <groupId>com.alibaba.cloud</groupId>
+    <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+</dependency>
+```
+
 - 配置`bootstrap.yml`
 
 ```yaml
@@ -22,13 +32,9 @@ spring:
         server-addr: 127.0.0.1:8848
         namespace: b3cda453-fe2b-4cdb-a752-1320e66c2151
         group: spring-cloud-consumer
-      config:
-        server-addr: ${spring.cloud.nacos.discovery.server-addr}
-        namespace: ${spring.cloud.nacos.discovery.namespace}
-        group: ${spring.cloud.nacos.discovery.group}
-        file-extension: yml
-        refresh-enabled: true
 ```
+
+- 主启动类添加`@EnableDiscoveryClient`注解(可以不配置也可以)
 
 ### 相关配置
 
@@ -215,3 +221,367 @@ CAP是分布式系统中最基础的理论，即一个分布式系统最多只�
 分布式系统，网络通信不可靠，当任意消息丢失或延迟时，系统仍会提供服务，不会出现宕机，要求一直运行，`强调不宕机，不挂掉`；
 
 *对于分布式系统而言，分区容错性是前提条件，此时只能在一致性 和 可用性中二选一*
+
+nacos 会根据配置识别是CP模式还是AP模式，默认是AP模式；
+
+如果注册nacos的client节点是ephemeral=true，表示为临时实力，nacos对这个client节点效果为AP；
+采用distro协议实现；
+
+如果为false，表示使用持久实例，nacos集群对这个client节点效果为CP，采用raft协议实现；
+
+总之，服务注册中心选择AP或CP是根据业务场景决定的。如果要求数据一致性很高，且可以容忍一定时间内不可用，可以选用CP模型；
+如果可以容忍一定时间延迟 不一致性 可以选用AP；
+
+### nacos配置中心
+
+目前主流配置中心spring cloud config、apollo（携程）、disconf（百度）、nacos（阿里）
+
+#### 简介
+
+**现状：**
+在微服务中，配置文件比较分散，随着项目的配置文件越来越多，并且这些配置文件分散在各个微服务中，
+不能进行集中管理，不好进行统一配置，对于运维和开发人员而言，管理成本较大。
+
+无法区分环境，需要修改时就需要去各个微服务下进行手动维护。
+
+配置文件不能实时更新，修改配置文件后需要重启微服务配置才能生效，对于一个正在运行的项目来说，是不友好的。
+
+不支持配置内容的安全性和权限校验，如果遇到黑客攻击服务器，并获取了源码，也能直接获取配置文件并篡改；
+
+**解决：**
+nacos配置中心的本质就是将分散的配置文件通过公共组件集中在一起进行管理，Nacos控制台向开发者提供管理配置信息的功能，可以将配置管理功能与应用的运行黄静解耦；
+
+#### 快速开始
+
+- 引入依赖
+
+```xml
+<!-- nacos config -->
+<dependency>
+    <groupId>com.alibaba.cloud</groupId>
+    <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+</dependency>
+```
+
+- 在nacos中创建对应的配置文件
+
+- 添加配置文件`bootstrap.yml`
+
+*使用bootstrap.yml时需要引入bootstrap依赖*
+
+```xml
+<!-- bootstrap -->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-bootstrap</artifactId>
+</dependency>
+```
+
+```yaml
+spring:
+  application:
+    name: consumer-server
+  profiles:
+    active: dev # profile颗粒度配置 用于区分不同环境，如dev、prod、test等 配置中心命名规则：应用名-active.yml
+  cloud:
+    nacos:
+      config:
+        username: nacos
+        password: nacos
+        server-addr: 127.0.0.1:8848 # 配置中心地址
+        namespace: b3cda453-fe2b-4cdb-a752-1320e66c2151 # 命名空间
+        group: spring-cloud-consumer # 分组
+        file-extension: yml
+        refresh-enabled: true
+#  不使用bootstrap.yml的时候需要加上这个配置（新版本配置 可以直接使用application.yml）
+#  config:
+#    import: optional:nacos:consumer-server-dev.yml
+```
+
+#### 配置中心和客户端数据同步模式
+
+- push模式
+
+客户端与服务器建立长连接，当服务器配置数据变动，立即将数据推送给客户端。
+优势：可以立即推送，及时性强，使用更简单，只要建立连接接收数据，不关心数据是否变更这类逻辑的处理；
+缺点：长连接可能因为网络问题，导致不可用，俗称假死状态。连接状态正常，但实际已经无法通信，使用心跳机制保证连接的可用性，才能推送成功；
+
+- pull模式
+
+客户端主动向服务端发送请求，拉去配置文件，常见方式轮询，比如每1s请求一次配置数据；
+短轮询：不管有无变化，一直请求获取配置，缺点时对服务器造成较大压力。
+长轮询：客户端发送请求，不会立即返回请求结果，请求会挂起一段时间，这段时间内服务端收据变更，立即响应客户端请求，如果一直没变更，就会等到超时时间后响应客户端请求，客户端重新发起长轮询；
+
+nacos配置中心：使用长轮询pull模式；
+nacos注册中心：push+pull模式；
+
+#### 配置中心动态更新
+
+*nacos无需做任何配置就可以实现动态更新配置，但是在使用`@Value`的时候 需要添加注解(后面有说明)*
+
+- 案例
+
+1.假设配置中心的内容为：
+
+```yaml
+server:
+  port: 8888
+```
+
+2.添加启动类 此时会每隔一秒打印8888
+
+```java
+
+@SpringBootApplication
+public class ProviderApplication {
+    public static void main(String[] args) throws InterruptedException {
+        ConfigurableApplicationContext context = SpringApplication.run(ProviderApplication.class, args);
+        ConfigurableEnvironment environment = context.getEnvironment();
+        while (true) {
+            System.out.println(environment.getProperty("server.port"));
+            TimeUnit.SECONDS.sleep(1);
+        }
+    }
+}
+```
+
+3.在配置中心更改配置为：
+此时无需重启服务，每隔一秒打印会变成9999
+
+```yaml
+server:
+  port: 9999
+```
+
+*注意：在controller中使用`@Value`获取配置中的值，如果配置中心发生变更，不会实时刷新们需要在controller上加上`@RefreshScope`
+注解才能生效*
+
+```java
+
+@RestController
+@RequestMapping("test")
+@RefreshScope // 需要加上这个注解才可以实现配置实时更新
+public class TestController {
+    @Value("${server.port}")
+    private Integer port;
+
+    @GetMapping("hello")
+    public String test() {
+        return "hello provider," + port;
+    }
+}
+```
+
+#### 多配置文件处理
+
+通过配置`spring.cloud.nacos.config.shared-configs`来设置多配置文件
+
+```yaml
+spring:
+  application:
+    name: provider-server
+  cloud:
+    nacos:
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: 8471a91d-06b0-4561-88f3-d637c72f27cc
+        group: provider-server
+        file-extension: yml
+        refresh-enabled: true
+        shared-configs:
+          - data-id: aaa.yml # 共享配置文件名
+            group: xxx # 分组名称
+            refresh: true # 是否自动刷新
+
+# 优先级：服务配置>extension-configs>shared-configs
+#          extension-configs:
+#            - data-id: aaa.yml
+#              group: xxx
+#              refresh: true
+
+# 新版本配置 后加载的会覆盖先加载的（加载顺序）
+#  config:
+#    import:
+#      - optional:nacos:consumer-server-prod.yml
+#      - optional:nacos:consumer-server-dev.yml
+```
+
+### feign
+
+#### 简介
+
+解决服务间调用问题,使web服务客户客户端变得更加容易，具有可插拔注解支持，包括feign注解和JAX-RD注解；可插拔解码器、编码器；
+只是spring mvc，只是使用spring mvc默认注解，继承eureka、loadbalancer提供负载均衡的客户端；
+
+常见的有RestTemplate、HttpClient、OKHttp3等；
+
+Feign继承Ribbon、RestTemplate，实现了负载均衡，不需要手动调用RestTemplate，只需要定义接口，面向接口编程，简化开发；
+
+#### feign 和 openFeign区别
+
+- feign
+
+spring cloud中的轻量级RestFul客户端，不在维护；
+
+- openFeign
+
+基于feign，支持了spring mvc注解，并通过动态代理方式产生实现类，实现类中做负载均衡并调用其他服务，不再使用ribbon，采用loadbalancer作为负载均衡
+
+#### 快速开始
+
+- 引入依赖(服务消费端)
+
+```xml
+<!-- openfeign -->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-openfeign</artifactId>
+</dependency>
+```
+
+- 启动类添加注解开启feign客户端
+
+```java
+
+@SpringBootApplication
+@EnableFeignClients // 允许开启feign客户端
+public class ConsumerApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(ConsumerApplication.class, args);
+    }
+
+}
+```
+
+- 服务提供方的controller
+
+```java
+
+@RestController
+@RequestMapping("test")
+public class TestController {
+
+    @GetMapping("hello")
+    public String test() {
+        return "hello provider！";
+    }
+}
+```
+
+- 编写feign接口（服务消费端）
+
+```java
+/**
+ * name/value：要调用的服务名
+ * path：对应服务提供者的@RequestMapping() 可不写
+ */
+//@FeignClient("provider-server")
+@FeignClient(value = "provider-server", path = "/test")
+public interface ProviderFeign {
+
+    @GetMapping("hello")
+    String test();
+
+}
+```
+
+- 服务消费端调用服务提供端的controller
+
+```java
+
+@RestController
+@RequestMapping("test")
+public class TestController {
+
+    @Resource
+    private ProviderFeign providerFeign;
+
+    @GetMapping("provider")
+    public String getProvider() {
+        return providerFeign.test();
+    }
+
+}
+```
+
+- 超时配置
+
+方式一：java代码
+
+```java
+
+@Configuration
+public class BeanConfiguration {
+
+    @Bean
+    @LoadBalanced// 使用负载均衡
+    public RestTemplate restTemplate(RestTemplateBuilder builder) {
+        builder.setConnectTimeout(Duration.ofSeconds(2));
+        builder.setReadTimeout(Duration.ofSeconds(1));
+        return builder.build();
+    }
+
+}
+```
+
+方式二：yml配置
+
+```yaml
+spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 2 # 连接超时（单位：秒）
+            read-timeout: 1 # 读取超时（单位：秒）
+```
+
+#### 日志配置
+
+*注意：只响应debug模式*
+
+NONE：（适合上线）不记录任何日志，默认是这个
+BASIC：记录请求方法、URL地址、响应状态码和执行时间
+HEADERS：包含BASIC的记录，并记录请求响应的headers
+FULL：（适合开发测试）记录请求和响应的header、body和元数据
+
+方式一：java代码
+
+```java
+
+@Configuration
+public class OpenFeignConfig {
+    @Bean
+    Logger.Level level() {
+//        return Logger.Level.NONE;
+//        return Logger.Level.BASIC;
+//        return Logger.Level.HEADERS;
+        return Logger.Level.FULL;
+    }
+}
+
+```
+
+*springboot默认的日志级别为INFO，需要更改才能实现日志打印*
+
+```yaml
+logging:
+  level:
+    com.hetongxue.cloud.feign: debug # 这里是你的feign的包路径
+```
+
+方式二：yml配置
+
+```yaml
+spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            logger-level: full
+```
+
+*如果同时设置的话。yml的优先级高于java代码*

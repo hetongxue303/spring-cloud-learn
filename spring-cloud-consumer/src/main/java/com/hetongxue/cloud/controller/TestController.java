@@ -1,5 +1,6 @@
 package com.hetongxue.cloud.controller;
 
+import com.hetongxue.cloud.feign.ProviderFeign;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,6 +18,9 @@ import org.springframework.web.client.RestTemplate;
 public class TestController {
 
     @Resource
+    private ProviderFeign providerFeign;
+
+    @Resource
     private RestTemplate restTemplate;
 
     @GetMapping("hello")
@@ -28,6 +32,11 @@ public class TestController {
     public String testRest() {
         String url = "http://provider-server/test/hello";
         return restTemplate.getForObject(url, String.class);
+    }
+
+    @GetMapping("provider")
+    public String getProvider() {
+        return providerFeign.test();
     }
 
 }

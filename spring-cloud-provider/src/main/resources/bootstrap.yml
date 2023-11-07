@@ -9,9 +9,8 @@ spring:
       password: nacos
       discovery:
         server-addr: 127.0.0.1:8848
-        namespace: b3cda453-fe2b-4cdb-a752-1320e66c2151
-        group: spring-cloud-provider
-        ephemeral: false
+        namespace: 8471a91d-06b0-4561-88f3-d637c72f27cc
+        group: provider-server
       config:
         server-addr: ${spring.cloud.nacos.discovery.server-addr}
         namespace: ${spring.cloud.nacos.discovery.namespace}
