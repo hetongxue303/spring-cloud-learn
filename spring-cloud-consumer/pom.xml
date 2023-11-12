@@ -36,6 +36,12 @@
             <artifactId>spring-cloud-loadbalancer</artifactId>
         </dependency>
 
+        <!-- openfeign -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+
         <!-- bootstrap -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>

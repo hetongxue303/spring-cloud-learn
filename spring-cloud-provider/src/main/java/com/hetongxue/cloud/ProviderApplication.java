@@ -2,6 +2,10 @@ package com.hetongxue.cloud;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.ConfigurableEnvironment;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * 服务提供启动类
