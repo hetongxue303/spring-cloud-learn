@@ -132,7 +132,7 @@ chmod +x /usr/local/bin/docker-compose
 
 ### docker可视化
 
-#### 1.portainer
+#### portainer
 
 版本查看：[portainer](https://github.com/portainer/portainer/releases/tag/2.19.1)
 
@@ -156,7 +156,7 @@ docker logs -f portainer
 
 ---
 
-#### 2.1panel
+#### panel
 
 官网：[1Panel](https://1panel.cn/)
 
@@ -167,7 +167,7 @@ curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_
 
 ---
 
-### 相关容器
+### docker容器
 
 #### java
 
@@ -193,6 +193,8 @@ source /etc/profile
 # 2.4 验证安装
 java -version
 ```
+
+---
 
 #### mysql
 
@@ -252,9 +254,7 @@ appendonly：持久化
 
 #### nacos
 
-###### 安装
-
-###### 单机非持久化
+- 单机非持久化
 
 ```shell
 docker run -d \
@@ -270,7 +270,7 @@ docker run -d \
 nacos/nacos-server:v2.2.1
 ```
 
-###### 单机持久化
+- 单机持久化
 
 *前提：安装mysql并初始化nacos数据库*
 
@@ -301,7 +301,7 @@ docker run -d \
 nacos/nacos-server:v2.2.1
 ```
 
-##### windows启动
+- windows启动
 
 *注：如果使用的2.2.0及之后的版本需要对其配置文件中的一下配置进行修改，否则无法启动；*
 
@@ -330,9 +330,9 @@ startup.cmd -m standalone
 
 ---
 
-#### 存储
+### 存储相关
 
-##### MinIO*[更新中...]*
+#### MinIO*[更新中...]*
 
 官网：[MinIO | 高性能分布式存储](https://www.minio.org.cn/)
 
@@ -392,7 +392,7 @@ services:
 
 ---
 
-##### GitLab*[更新中...]*
+#### GitLab*[更新中...]*
 
 - 创建gitlab目录
 
@@ -407,7 +407,60 @@ sudo vi /usr/local/docker/gitlab/docker-compose.yml
 docker pull gitlab/gitlab-ce
 ```
 
+---
 
+### 自动化
+
+#### jenkins
+
+##### gitlab
+
+- 安装gitlab
+
+```shell
+# 安装相关依赖
+yum -y install policycoreutils openssh-server openssh-client postfix
+
+# 启动ssh服务&&设置开机自启
+sudo systemctl enable sshd && sudo systemctl start sshd && sudo systemctl status sshd
+
+# 启动postfix服务&&设置开机自启
+sudo systemctl enable postfix && systemctl start postfix && sudo systemctl status postfix
+
+# 开发ssh&&http服务&&重启防火墙
+firewall-cmd --add-service=ssh --permanent
+firewall-cmd --add-service=http --permanent
+firewall-cmd --reload
+
+# 下载gitlab包&&安装
+# 本地下载：https://tuna.moe/
+wget https://mirrors.tuna.tsinghua.edu.cn/gitlab-ce/yum/el7/gitlab-ce-16.3.6-ce.0.el7.x86_64.rpm
+rpm -ivh gitlab-ce-16.3.6-ce.0.el7.x86_64.rpm
+
+# 修改gitlab配置
+vi /etc/gitlab/gitlab.rb
+
+external_url 'http://192.168.164.10:82'
+nginx['listen_port'] = 82
+gitlab_rails['initial_root_password'] = 'Gitlab@hy.com'
+
+# 重新配置&&启动gitlab
+gitlab-ctl reconfigure
+gitlab-ctl restart
+
+# 添加端口到防火墙
+firewall-cmd --zone=public --add-port=82/tcp --permanent
+firewall-cmd --reload
+
+# 访问地址
+http://192.168.164.10:82/
+
+sudo gitlab-rails console -e production
+irb> user = User.where(id: 1).first
+irb> user.password = 'Gitlab@hy.com'
+irb> user.password_confirmation = 'Gitlab@hy.com'
+irb> user.save!
+```
 
 
 
