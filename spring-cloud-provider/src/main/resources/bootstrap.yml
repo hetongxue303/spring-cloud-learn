@@ -17,3 +17,6 @@ spring:
         group: ${spring.cloud.nacos.discovery.group}
         file-extension: yml
         refresh-enabled: true
+logging:
+  pattern:
+    dateformat: MM-dd HH:mm:ss:SSS

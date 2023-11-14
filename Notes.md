@@ -77,7 +77,7 @@ public class BeanConfiguration {
          ephemeral: true
 ```
 
-**区别：**
+> 临时实例 && 持久实例区别
 
 - 临时实例
 
@@ -164,7 +164,7 @@ db.password.0=root
 
 - 重新启动nacos，日志显示`use external storage`即为成功
 
-**集群部署：**
+> 集群部署
 
 - 启用多个nacos
 
@@ -585,3 +585,414 @@ spring:
 ```
 
 *如果同时设置的话。yml的优先级高于java代码*
+
+### RabbitMQ
+
+#### 快速入门
+
+- 引入依赖
+
+```xml
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-amqp</artifactId>
+    <version>3.1.5</version>
+</dependency>
+```
+
+- 添加配置
+
+*注意：消息接收者 和 消息发送者都需要添加这个配置*
+
+```yaml
+spring:
+  rabbitmq:
+    host: 127.0.0.1 # 你的rabbitmq地址
+    port: 5672 # 端口地址
+    username: rabbitmq # 你的用户名
+    password: rabbitmq # 你的密码
+    virtual-host: / # 虚拟地址
+
+```
+
+> 简单使用
+
+- 服务提供者 - 发送消息
+
+通过使用`RabbitTemplate`发送消息，第一个参数是队列名字，第二个参数是消息内容（可以是对象、文本、列表等）
+
+```java
+public class TestController {
+
+    @Resource
+    private RabbitTemplate rabbitTemplate;
+
+    public void testSendMessage() {
+        String queueName = "queue.name";
+        String message = "hello,amqp";
+        rabbitTemplate.convertAndSend(queueName, message);
+    }
+
+}
+```
+
+- 服务消费者 - 接收消息
+
+通过`@RabbitListener`注解，其中的`queues`是监听的队列名称，接收对应的消息`message`（这里message的类型与发送的一致）
+
+*注意：该类需要添加`@Component`交给spring管理*
+
+```java
+
+@Component
+public class TestListener {
+    @RabbitListener(queues = "queue.name")
+    public void listenSimpleQueueMessage(String message) {
+        System.out.println("message = " + message);
+    }
+}
+```
+
+> WorkQueue使用
+
+WorkQueue（即工作队列），解决在消息发送量大于单个消息接收者的处理量时，达到多个消息接收者共同处理的效果，提高消息处理速度，避免消息队列堆积最终导致消息丢失
+
+- 添加配置
+
+说明：通过设置prefetch值，来控制消费者获取消息阈值；
+
+```yaml
+spring:
+  rabbitmq:
+    listener:
+      simple:
+        prefetch: 1 # 每次只获取一条消息 处理完成后在获取下一条消息
+```
+
+- 服务提供者 - 假设1秒钟发送100条消息
+
+```java
+public class TestController {
+
+    @Resource
+    private RabbitTemplate rabbitTemplate;
+
+    public void testSendMessage() throws InterruptedException {
+        String queueName = "queue.name";
+        String message = "hello,amqp";
+        for (int i = 0; i < 100; i++) {
+            rabbitTemplate.convertAndSend(queueName, message + i);
+            Thread.sleep(10);
+        }
+    }
+
+}
+```
+
+- 服务消费者 - 多个消费者
+
+```java
+
+@Component
+public class TestListener {
+
+    @RabbitListener(queues = "queue.name")// 模拟消费者1
+    public void listenSimpleQueueMessage1(String message) throws InterruptedException {
+        System.out.println("message = " + message);
+        Thread.sleep(5);
+    }
+
+    @RabbitListener(queues = "queue.name")// 模拟消费者2
+    public void listenSimpleQueueMessage2(String message) throws InterruptedException {
+        System.out.println("message = " + message);
+        Thread.sleep(10);
+    }
+
+}
+```
+
+> 发布 && 订阅
+
+之前的使用方法都是发出的消息只能被一个消费者消费，一旦消费后就会在队列中删除，这个特征无法满足被多个消费者消费，例如用户支付成功后通知订单服务、仓储服务、短信服务；
+此时需要被三个服务都收到并消费，这就需要用到发布 && 订阅；
+
+发布订阅，需要经过`exchange`（交换机），最终消息发送给哪个消费者，由交换机决定，交换机常见类型有：
+
+- Fanout：广播
+- Direct：路由
+- Topic：话题
+
+*注意：exchange负责消息路由，并不是存储，路由失败也会导致消息丢失*
+
+![image/img.png](images/img.png)
+
+1. Fanout-Change
+
+**该模式会将接收到的所有消息都路由到每一个`绑定`的queue上**
+
+![img.png](images/img1.png)
+
+- 交换机与队列绑定
+
+```java
+
+@Configuration
+public class FanoutConfig {
+
+    // 声明一个FanoutExchange交换机
+    @Bean
+    public FanoutExchange fanoutExchange() {
+        return new FanoutExchange("fanout.exchange");
+    }
+
+
+    // 声明第一个队列：fanout.queue1
+    @Bean
+    public Queue fanoutQueue1() {
+        return new Queue("fanout.queue1");
+    }
+
+    // 绑定 队列fanout.queue1 与 交换机fanout.exchange
+    @Bean
+    public Binding bindingQueue1(Queue fanoutQueue1, FanoutExchange fanoutExchange) {
+        return BindingBuilder.bind(fanoutQueue1).to(fanoutExchange);
+    }
+
+
+    // 声明第二个队列：fanout.queue2
+    @Bean
+    public Queue fanoutQueue2() {
+        return new Queue("fanout.queue2");
+    }
+
+    // 绑定 队列fanout.queue2 与 交换机fanout.exchange
+    @Bean
+    public Binding bindingQueue1(Queue fanoutQueue2, FanoutExchange fanoutExchange) {
+        return BindingBuilder.bind(fanoutQueue2).to(fanoutExchange);
+    }
+
+    // ...后面的多个绑定方法同上
+}
+```
+
+- 服务提供者 - 发送消息
+
+```java
+public class TestController {
+
+    @Resource
+    private RabbitTemplate rabbitTemplate;
+
+    public void testSendMessage() {
+        String exchangeName = "fanout.exchange";
+        String message = "hello,fanout exchange";
+        rabbitTemplate.convertAndSend(exchangeName, "", message);
+    }
+
+}
+```
+
+- 服务消费者 - 接收消息（多个服务接收）
+
+```java
+
+@Component
+public class TestListener {
+
+    @RabbitListener(queues = "fanout.queue1")
+    public void listenSimpleQueueMessage1(String message) {
+        System.out.println("message = " + message);
+    }
+
+    @RabbitListener(queues = "fanout.queue2")
+    public void listenSimpleQueueMessage2(String message) {
+        System.out.println("message = " + message);
+    }
+
+}
+```
+
+问题：
+1.交换机作用？
+
+- 接收订阅发送的消息；
+- 将消息按规则路由到绑定的队列中去；
+- `不能缓存消息`，路由失败消息会丢失；
+
+2. Direct-Change
+
+**该模式会将接收到的消息都路由到`指定`的queue，又叫路由模式**
+
+每一个queue都和exchange有一个`BindingKey`，服务提供者发布消息的时候，指定消息的`RoutingKey`
+，如果两个queue存在相同的`RoutingKey`，实现与Fanout一致
+
+- 服务提供者 - 发送消息（指定key）
+
+```java
+public class TestController {
+
+    @Resource
+    private RabbitTemplate rabbitTemplate;
+
+    public void testSendMessage() {
+        String exchangeName = "direct.exchange";
+        String message = "hello,type1";
+        rabbitTemplate.convertAndSend(exchangeName, "type1", message);// 此时只有绑定type1的队列才可以收到
+    }
+
+}
+```
+
+- 服务消费者 - 接收消息（设置RoutingKey）
+
+```java
+
+@Component
+public class TestListener {
+
+    /**
+     * value：队列信息
+     * exchange：交换机信息
+     * key：key列表
+     */
+    @RabbitListener(bindings = @QueueBinding(
+            value = @Queue(name = "direct.queue1"),
+            exchange = @Exchange(name = "direct.exchange", type = ExchangeTypes.DIRECT),
+            key = {"type1", "type2"}))
+    public void listenSimpleQueueMessage1(String message) {
+        System.out.println("message = " + message);
+    }
+
+
+    @RabbitListener(bindings = @QueueBinding(
+            value = @Queue(name = "direct.queue2"),
+            exchange = @Exchange(name = "direct.exchange", type = ExchangeTypes.DIRECT),
+            key = {"type1", "type3"}))
+    public void listenSimpleQueueMessage2(String message) {
+        System.out.println("message = " + message);
+    }
+
+}
+```
+
+3. Topic-Change
+
+**与Direct类似，区别在于RoutingKey必须由多个单词组成，并且以`,`分割，故叫话题模式，例如我要查看重庆的天气和上海的天气，
+只需要设置重庆和上海的单词key**
+
+通配符
+#：指代0或多个单词
+*：指代一个单词
+
+例如：china.# 或 #.news
+
+- 服务提供者 - 发送消息（指定type为topic）
+
+```java
+public class TestController {
+
+    @Resource
+    private RabbitTemplate rabbitTemplate;
+
+    public void testSendMessage() {
+        String exchangeName = "direct.exchange";
+        String message = "hello,word";
+        rabbitTemplate.convertAndSend(exchangeName, "china.news", message);// china.#和#.news都能收到
+        rabbitTemplate.convertAndSend(exchangeName, "china.car", message);// 只有绑定china.#的能收到
+    }
+
+}
+```
+
+- 服务消费者 - 接收消息
+
+```java
+
+@Component
+public class TestListener {
+
+    // 这里的type要设置为TOPIC
+    @RabbitListener(bindings = @QueueBinding(
+            value = @Queue(name = "direct.queue1"),
+            exchange = @Exchange(name = "topic.exchange", type = ExchangeTypes.TOPIC),
+            key = {"china.#"}))
+    public void listenSimpleQueueMessage1(String message) {
+        System.out.println("message = " + message);
+    }
+
+
+    @RabbitListener(bindings = @QueueBinding(
+            value = @Queue(name = "topic.queue2"),
+            exchange = @Exchange(name = "topic.exchange", type = ExchangeTypes.TOPIC),
+            key = {"#.news"}))
+    public void listenSimpleQueueMessage2(String message) {
+        System.out.println("message = " + message);
+    }
+
+}
+```
+
+> 消息转换器
+
+作用：在发送消息中，接收消息的类型是Object，MQ默认会自动序列化数据（默认使用org.springframework.amqp.support.converter.MessageConverter处理），最好自己设置序列化；
+
+序列化与反序列化
+
+![img.png](images/img2.png)
+
+- 引入依赖（不一定非要用这个）
+
+```xml
+
+<dependency>
+    <groupId>com.fasterxml.jackson.core</groupId>
+    <artifactId>jackson-databind</artifactId>
+</dependency>
+```
+
+- 添加配置类
+
+```java
+
+@Configuration
+public class MessageConverterConfig {
+
+    @Bean
+    public MessageConverter messageConverter() {
+        return new Jackson2JsonMessageConverter();
+    }
+
+}
+```
+
+```java
+public class TestController {
+
+    @Resource
+    private RabbitTemplate rabbitTemplate;
+
+    public void testSendMessage() {
+        String exchangeName = "direct.exchange";
+        Map<String, Object> message = new HashMap<>();
+        message.put("1", "test1");
+        message.put("2", "test2");
+        message.put("3", "test3");
+        rabbitTemplate.convertAndSend(exchangeName, "china.car", message);
+    }
+
+}
+```
+
+```java
+
+@Component
+public class TestListener {
+
+    @RabbitListener(queues = "direct.queue1")
+    public void listenSimpleQueueMessage1(Map<String, Object> message) {
+        System.out.println("message = " + message);
+    }
+
+}
+```
